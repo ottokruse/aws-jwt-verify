@@ -125,8 +125,21 @@ function verifySignatureAgainstJwk(
   // Check JWK use
   assertStringEquals("JWK use", jwk.use, "sig");
 
+  // Check JWK kty
+  assertStringEquals("JWK kty", jwk.kty, "RSA");
+
   // Check that JWT signature algorithm matches JWK
-  assertStringEquals("JWT signature algorithm", header.alg, jwk.alg);
+  if (jwk.alg) {
+    assertStringEquals("JWT signature algorithm", header.alg, jwk.alg);
+  }
+
+  // Check JWT signature length matches JWT header alg
+  const signature = Buffer.from(signatureB64, "base64");
+  assertStringEquals(
+    "JWT signature length",
+    header.alg,
+    `RS${signature.length}`
+  );
 
   // Check JWT signature algorithm is RS256
   assertStringEquals("JWT signature algorithm", header.alg, "RS256");
@@ -138,7 +151,7 @@ function verifySignatureAgainstJwk(
   // RS256 is known in OpenSSL as RSA-SHA256
   const valid = createVerify("RSA-SHA256")
     .update(`${headerB64}.${payloadB64}`)
-    .verify(publicKey, signatureB64, "base64");
+    .verify(publicKey, signature);
   if (!valid) {
     throw new JwtInvalidSignatureError("Invalid signature");
   }

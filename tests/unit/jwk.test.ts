@@ -27,11 +27,11 @@ describe("unit tests jwk", () => {
   const jwksUri = "https://example.com/keys/jwks.json";
   let keypair: ReturnType<typeof generateKeyPair>;
   const getDecomposedJwt = (kid?: string) => ({
-    header: {
+    unverifiedHeader: {
       alg: "RS256",
       kid: kid ?? keypair.jwk.kid,
     },
-    payload: {},
+    unverifiedPayload: {},
   });
   beforeAll(() => {
     keypair = generateKeyPair();
@@ -58,7 +58,10 @@ describe("unit tests jwk", () => {
   test("Fetch JWK error flow: kid empty", () => {
     expect.assertions(1);
     return expect(
-      fetchJwk(jwksUri, { header: { alg: "RS256" }, payload: {} })
+      fetchJwk(jwksUri, {
+        unverifiedHeader: { alg: "RS256" },
+        unverifiedPayload: {},
+      })
     ).rejects.toThrow(JwtWithoutValidKidError);
   });
 
@@ -106,7 +109,10 @@ describe("unit tests jwk", () => {
     const jwksCache = new SimpleJwksCache();
     expect.assertions(1);
     return expect(
-      jwksCache.getJwk(jwksUri, { header: { alg: "RS256" }, payload: {} })
+      jwksCache.getJwk(jwksUri, {
+        unverifiedHeader: { alg: "RS256" },
+        unverifiedPayload: {},
+      })
     ).rejects.toThrow(JwtWithoutValidKidError);
   });
 

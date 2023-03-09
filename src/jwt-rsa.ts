@@ -268,25 +268,30 @@ async function verifyDecomposedJwt(
   ) => Promise<JwkWithKid> = fetchJwk,
   transformJwkToKeyObjectFn: JwkToKeyObjectTransformerAsync = nodeWebCompat.transformJwkToKeyObjectAsync
 ) {
-  const { header, headerB64, payload, payloadB64, signatureB64 } =
-    decomposedJwt;
+  const {
+    unverifiedHeader,
+    unverifiedHeaderB64,
+    unverifiedPayload,
+    unverifiedPayloadB64,
+    unverifiedSignatureB64,
+  } = decomposedJwt;
 
   const jwk = await jwkFetcher(jwksUri, decomposedJwt);
 
-  validateJwtHeaderAndJwk(decomposedJwt.header, jwk);
+  validateJwtHeaderAndJwk(decomposedJwt.unverifiedHeader, jwk);
 
   // Transform the JWK to native key format, that can be used with verifySignature
   const keyObject = await transformJwkToKeyObjectFn(
     jwk,
-    header.alg as SupportedSignatureAlgorithm,
-    payload.iss
+    unverifiedHeader.alg as SupportedSignatureAlgorithm,
+    unverifiedPayload.iss
   );
 
   // Verify the JWT signature
   const valid = await nodeWebCompat.verifySignatureAsync({
-    jwsSigningInput: `${headerB64}.${payloadB64}`,
-    signature: signatureB64,
-    alg: header.alg as SupportedSignatureAlgorithm,
+    jwsSigningInput: `${unverifiedHeaderB64}.${unverifiedPayloadB64}`,
+    signature: unverifiedSignatureB64,
+    alg: unverifiedHeader.alg as SupportedSignatureAlgorithm,
     keyObject,
   });
   if (!valid) {
@@ -294,18 +299,25 @@ async function verifyDecomposedJwt(
   }
 
   try {
-    validateJwtFields(payload, options);
+    validateJwtFields(unverifiedPayload, options);
     if (options.customJwtCheck) {
-      await options.customJwtCheck({ header, payload, jwk });
+      await options.customJwtCheck({
+        header: unverifiedHeader,
+        payload: unverifiedPayload,
+        jwk,
+      });
     }
   } catch (err) {
     if (options.includeRawJwtInErrors && err instanceof JwtInvalidClaimError) {
-      throw err.withRawJwt(decomposedJwt);
+      throw err.withRawJwt({
+        header: unverifiedHeader,
+        payload: unverifiedPayload,
+      });
     }
     throw err;
   }
 
-  return payload;
+  return unverifiedPayload; // This is actually verified now :tada:
 }
 
 /**
@@ -368,19 +380,24 @@ function verifyDecomposedJwtSync(
   },
   transformJwkToKeyObjectFn: JwkToKeyObjectTransformerSync
 ) {
-  const { header, headerB64, payload, payloadB64, signatureB64 } =
-    decomposedJwt;
+  const {
+    unverifiedHeader,
+    unverifiedHeaderB64,
+    unverifiedPayload,
+    unverifiedPayloadB64,
+    unverifiedSignatureB64,
+  } = decomposedJwt;
 
   let jwk: Jwk;
   if (isJwk(jwkOrJwks)) {
     jwk = jwkOrJwks;
   } else if (isJwks(jwkOrJwks)) {
-    const locatedJwk = header.kid
-      ? findJwkInJwks(jwkOrJwks, header.kid)
+    const locatedJwk = unverifiedHeader.kid
+      ? findJwkInJwks(jwkOrJwks, unverifiedHeader.kid)
       : undefined;
     if (!locatedJwk) {
       throw new KidNotFoundInJwksError(
-        `JWK for kid ${header.kid} not found in the JWKS`
+        `JWK for kid ${unverifiedHeader.kid} not found in the JWKS`
       );
     }
     jwk = locatedJwk;
@@ -393,20 +410,20 @@ function verifyDecomposedJwtSync(
     );
   }
 
-  validateJwtHeaderAndJwk(decomposedJwt.header, jwk);
+  validateJwtHeaderAndJwk(decomposedJwt.unverifiedHeader, jwk);
 
   // Transform the JWK to native key format, that can be used with verifySignature
   const keyObject = transformJwkToKeyObjectFn(
     jwk,
-    header.alg as SupportedSignatureAlgorithm,
-    payload.iss
+    unverifiedHeader.alg as SupportedSignatureAlgorithm,
+    unverifiedPayload.iss
   );
 
   // Verify the JWT signature (JWS)
   const valid = nodeWebCompat.verifySignatureSync({
-    jwsSigningInput: `${headerB64}.${payloadB64}`,
-    signature: signatureB64,
-    alg: header.alg as SupportedSignatureAlgorithm,
+    jwsSigningInput: `${unverifiedHeaderB64}.${unverifiedPayloadB64}`,
+    signature: unverifiedSignatureB64,
+    alg: unverifiedHeader.alg as SupportedSignatureAlgorithm,
     keyObject,
   });
   if (!valid) {
@@ -414,9 +431,13 @@ function verifyDecomposedJwtSync(
   }
 
   try {
-    validateJwtFields(payload, options);
+    validateJwtFields(unverifiedPayload, options);
     if (options.customJwtCheck) {
-      const res = options.customJwtCheck({ header, payload, jwk });
+      const res = options.customJwtCheck({
+        header: unverifiedHeader,
+        payload: unverifiedPayload,
+        jwk,
+      });
       assertIsNotPromise(
         res,
         () =>
@@ -427,12 +448,15 @@ function verifyDecomposedJwtSync(
     }
   } catch (err) {
     if (options.includeRawJwtInErrors && err instanceof JwtInvalidClaimError) {
-      throw err.withRawJwt(decomposedJwt);
+      throw err.withRawJwt({
+        payload: unverifiedPayload,
+        header: unverifiedHeader,
+      });
     }
     throw err;
   }
 
-  return payload;
+  return unverifiedPayload; // This is actually verified now :tada:
 }
 
 /** Type alias for better readability below */
@@ -640,11 +664,13 @@ export abstract class JwtRsaVerifierBase<
     const decomposedJwt = decomposeJwt(jwt);
     assertStringArrayContainsString(
       "Issuer",
-      decomposedJwt.payload.iss,
+      decomposedJwt.unverifiedPayload.iss,
       this.expectedIssuers,
       JwtInvalidIssuerError
     );
-    const issuerConfig = this.getIssuerConfig(decomposedJwt.payload.iss);
+    const issuerConfig = this.getIssuerConfig(
+      decomposedJwt.unverifiedPayload.iss
+    );
     return {
       decomposedJwt,
       jwksUri: issuerConfig.jwksUri,

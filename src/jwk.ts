@@ -18,8 +18,8 @@ import { nodeWebCompat } from "#node-web-compat";
 import { assertStringEquals } from "./assert.js";
 
 interface DecomposedJwt {
-  header: JwtHeader;
-  payload: JwtPayload;
+  unverifiedHeader: JwtHeader;
+  unverifiedPayload: JwtPayload;
 }
 
 const optionalJwkFieldNames = [
@@ -83,16 +83,16 @@ export async function fetchJwk(
   jwksUri: string,
   decomposedJwt: DecomposedJwt
 ): Promise<JwkWithKid> {
-  if (!decomposedJwt.header.kid) {
+  if (!decomposedJwt.unverifiedHeader.kid) {
     throw new JwtWithoutValidKidError(
       "JWT header does not have valid kid claim"
     );
   }
   const jwks = await fetchJwks(jwksUri);
-  const jwk = findJwkInJwks(jwks, decomposedJwt.header.kid);
+  const jwk = findJwkInJwks(jwks, decomposedJwt.unverifiedHeader.kid);
   if (!jwk) {
     throw new KidNotFoundInJwksError(
-      `JWK for kid "${decomposedJwt.header.kid}" not found in the JWKS`
+      `JWK for kid "${decomposedJwt.unverifiedHeader.kid}" not found in the JWKS`
     );
   }
   return jwk;
@@ -257,7 +257,7 @@ export class SimpleJwksCache implements JwksCache {
     jwksUri: string,
     decomposedJwt: DecomposedJwt
   ): JwkWithKid {
-    if (typeof decomposedJwt.header.kid !== "string") {
+    if (typeof decomposedJwt.unverifiedHeader.kid !== "string") {
       throw new JwtWithoutValidKidError(
         "JWT header does not have valid kid claim"
       );
@@ -269,11 +269,11 @@ export class SimpleJwksCache implements JwksCache {
     }
     const jwk = findJwkInJwks(
       this.jwksCache.get(jwksUri)!,
-      decomposedJwt.header.kid
+      decomposedJwt.unverifiedHeader.kid
     );
     if (!jwk) {
       throw new KidNotFoundInJwksError(
-        `JWK for kid ${decomposedJwt.header.kid} not found in the JWKS`
+        `JWK for kid ${decomposedJwt.unverifiedHeader.kid} not found in the JWKS`
       );
     }
     return jwk;
@@ -283,7 +283,7 @@ export class SimpleJwksCache implements JwksCache {
     jwksUri: string,
     decomposedJwt: DecomposedJwt
   ): Promise<JwkWithKid> {
-    if (typeof decomposedJwt.header.kid !== "string") {
+    if (typeof decomposedJwt.unverifiedHeader.kid !== "string") {
       throw new JwtWithoutValidKidError(
         "JWT header does not have valid kid claim"
       );
@@ -292,7 +292,10 @@ export class SimpleJwksCache implements JwksCache {
     // Try to get JWK from cache:
     const cachedJwks = this.jwksCache.get(jwksUri);
     if (cachedJwks) {
-      const cachedJwk = findJwkInJwks(cachedJwks, decomposedJwt.header.kid);
+      const cachedJwk = findJwkInJwks(
+        cachedJwks,
+        decomposedJwt.unverifiedHeader.kid
+      );
       if (cachedJwk) {
         return cachedJwk;
       }
@@ -300,24 +303,27 @@ export class SimpleJwksCache implements JwksCache {
 
     // Await any wait period that is currently in effect
     // This prevents us from flooding the JWKS URI with requests
-    await this.penaltyBox.wait(jwksUri, decomposedJwt.header.kid);
+    await this.penaltyBox.wait(jwksUri, decomposedJwt.unverifiedHeader.kid);
 
     // Fetch the JWKS and (try to) locate the JWK
     const jwks = await this.getJwks(jwksUri);
-    const jwk = findJwkInJwks(jwks, decomposedJwt.header.kid);
+    const jwk = findJwkInJwks(jwks, decomposedJwt.unverifiedHeader.kid);
 
     // If the JWK could not be located, someone might be messing around with us
     // Register the failed attempt with the penaltyBox, so it can enforce a wait period
     // before trying again next time (instead of flooding the JWKS URI with requests)
     if (!jwk) {
-      this.penaltyBox.registerFailedAttempt(jwksUri, decomposedJwt.header.kid);
+      this.penaltyBox.registerFailedAttempt(
+        jwksUri,
+        decomposedJwt.unverifiedHeader.kid
+      );
       throw new KidNotFoundInJwksError(
-        `JWK for kid "${decomposedJwt.header.kid}" not found in the JWKS`
+        `JWK for kid "${decomposedJwt.unverifiedHeader.kid}" not found in the JWKS`
       );
     } else {
       this.penaltyBox.registerSuccessfulAttempt(
         jwksUri,
-        decomposedJwt.header.kid
+        decomposedJwt.unverifiedHeader.kid
       );
     }
 

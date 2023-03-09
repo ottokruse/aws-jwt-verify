@@ -55,8 +55,8 @@ describe("unit tests cognito verifier", () => {
           })
         ).toMatchObject({ hello: "world" });
         expect(customJwtCheck).toHaveBeenCalledWith({
-          header: decomposedJwt.header,
-          payload: decomposedJwt.payload,
+          header: decomposedJwt.unverifiedHeader,
+          payload: decomposedJwt.unverifiedPayload,
           jwk: keypair.jwk,
         });
       });

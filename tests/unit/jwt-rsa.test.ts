@@ -1322,8 +1322,8 @@ describe("unit tests jwt verifier", () => {
           await verifier.verify(signedJwt, { audience: null })
         ).toMatchObject({ hello: "world" });
         expect(customJwtCheck).toHaveBeenCalledWith({
-          header: decomposedJwt.header,
-          payload: decomposedJwt.payload,
+          header: decomposedJwt.unverifiedHeader,
+          payload: decomposedJwt.unverifiedPayload,
           jwk: keypair.jwk,
         });
       });
@@ -1406,8 +1406,8 @@ describe("unit tests jwt verifier", () => {
           verifier.verifySync(signedJwt, { audience: null })
         ).toMatchObject({ hello: "world" });
         expect(customJwtCheck).toHaveBeenCalledWith({
-          header: decomposedJwt.header,
-          payload: decomposedJwt.payload,
+          header: decomposedJwt.unverifiedHeader,
+          payload: decomposedJwt.unverifiedPayload,
           jwk: keypair.jwk,
         });
       });

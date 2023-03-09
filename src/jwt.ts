@@ -88,15 +88,17 @@ function assertJwtPayload(
  * - payload object
  * - signature string
  *
+ * This does NOT verify the JWT's signature, it merely checks if the JWT is well formed
+ *
  * @param jwt The JWT (as string)
  * @returns the decomposed JWT
  */
 export function decomposeJwt(jwt: unknown): {
-  header: JwtHeader;
-  headerB64: string;
-  payload: JwtPayload;
-  payloadB64: string;
-  signatureB64: string;
+  unverifiedHeader: JwtHeader;
+  unverifiedHeaderB64: string;
+  unverifiedPayload: JwtPayload;
+  unverifiedPayloadB64: string;
+  unverifiedSignatureB64: string;
 } {
   // Sanity checks on JWT
   if (!jwt) {
@@ -110,43 +112,45 @@ export function decomposeJwt(jwt: unknown): {
       "JWT string does not consist of exactly 3 parts (header, payload, signature)"
     );
   }
-  const [headerB64, payloadB64, signatureB64] = jwt.split(".");
+  const [unverifiedHeaderB64, unverifiedPayloadB64, unverifiedSignatureB64] =
+    jwt.split(".");
 
   // B64 decode header and payload
-  const [headerString, payloadString] = [headerB64, payloadB64].map(
-    nodeWebCompat.parseB64UrlString
-  );
+  const [unverifiedHeaderString, unverifiedPayloadString] = [
+    unverifiedHeaderB64,
+    unverifiedPayloadB64,
+  ].map(nodeWebCompat.parseB64UrlString);
 
   // Parse header
-  let header: ReturnType<typeof safeJsonParse>;
+  let unverifiedHeader: ReturnType<typeof safeJsonParse>;
   try {
-    header = safeJsonParse(headerString);
+    unverifiedHeader = safeJsonParse(unverifiedHeaderString);
   } catch (err) {
     throw new JwtParseError(
       "Invalid JWT. Header is not a valid JSON object",
       err
     );
   }
-  assertJwtHeader(header);
+  assertJwtHeader(unverifiedHeader);
 
   // parse payload
-  let payload: ReturnType<typeof safeJsonParse>;
+  let unverifiedPayload: ReturnType<typeof safeJsonParse>;
   try {
-    payload = safeJsonParse(payloadString);
+    unverifiedPayload = safeJsonParse(unverifiedPayloadString);
   } catch (err) {
     throw new JwtParseError(
       "Invalid JWT. Payload is not a valid JSON object",
       err
     );
   }
-  assertJwtPayload(payload);
+  assertJwtPayload(unverifiedPayload);
 
   return {
-    header,
-    headerB64,
-    payload,
-    payloadB64,
-    signatureB64,
+    unverifiedHeader,
+    unverifiedHeaderB64,
+    unverifiedPayload,
+    unverifiedPayloadB64,
+    unverifiedSignatureB64,
   };
 }
 

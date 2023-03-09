@@ -319,17 +319,23 @@ export class CognitoJwtVerifier<
       this.getVerifyParameters(jwt, properties);
     this.verifyDecomposedJwtSync(decomposedJwt, jwksUri, verifyProperties);
     try {
-      validateCognitoJwtFields(decomposedJwt.payload, verifyProperties);
+      validateCognitoJwtFields(
+        decomposedJwt.unverifiedPayload,
+        verifyProperties
+      );
     } catch (err) {
       if (
         verifyProperties.includeRawJwtInErrors &&
         err instanceof JwtInvalidClaimError
       ) {
-        throw err.withRawJwt(decomposedJwt);
+        throw err.withRawJwt({
+          header: decomposedJwt.unverifiedHeader,
+          payload: decomposedJwt.unverifiedPayload,
+        });
       }
       throw err;
     }
-    return decomposedJwt.payload as CognitoIdOrAccessTokenPayload<
+    return decomposedJwt.unverifiedPayload as CognitoIdOrAccessTokenPayload<
       IssuerConfig,
       T
     >;
@@ -351,17 +357,23 @@ export class CognitoJwtVerifier<
       this.getVerifyParameters(jwt, properties);
     await this.verifyDecomposedJwt(decomposedJwt, jwksUri, verifyProperties);
     try {
-      validateCognitoJwtFields(decomposedJwt.payload, verifyProperties);
+      validateCognitoJwtFields(
+        decomposedJwt.unverifiedPayload,
+        verifyProperties
+      );
     } catch (err) {
       if (
         verifyProperties.includeRawJwtInErrors &&
         err instanceof JwtInvalidClaimError
       ) {
-        throw err.withRawJwt(decomposedJwt);
+        throw err.withRawJwt({
+          header: decomposedJwt.unverifiedHeader,
+          payload: decomposedJwt.unverifiedPayload,
+        });
       }
       throw err;
     }
-    return decomposedJwt.payload as CognitoIdOrAccessTokenPayload<
+    return decomposedJwt.unverifiedPayload as CognitoIdOrAccessTokenPayload<
       IssuerConfig,
       T
     >;

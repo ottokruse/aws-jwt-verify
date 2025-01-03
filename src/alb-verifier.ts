@@ -1,4 +1,4 @@
-import { assertStringArrayContainsString, assertStringEquals } from "./assert";
+import { assertStringArrayContainsString } from "./assert";
 import { JwtInvalidClaimError, ParameterValidationError } from "error";
 import { Jwk, JwksCache } from "jwk";
 import { JwtHeader, JwtPayload } from "jwt-model"; // todo consider creating a specific type for AWS ALB JWT Payload
@@ -6,6 +6,14 @@ import { JwtVerifierBase } from "jwt-verifier";
 import { Properties } from "typing-util";
 
 export interface VerifyProperties {
+  /**
+   * The ARN of the Application Load Balancer (ALB) that signs the JWT.
+   * Set this to the expected value of the `signer` claim in the JWT (JWT header).
+   * If you provide a string array, that means at least one of those ALB ARNs
+   * must be present in the JWT's signer claim.
+   * Pass null explicitly to not check the JWT's signer--if you know what you're doing
+   */
+  albArn: string | string[] | null;
   /**
    * The client ID that you expect to be present in the JWT's client claim (in the JWT header).
    * If you provide a string array, that means at least one of those client IDs
@@ -54,11 +62,6 @@ export type JwtVerifierProperties<VerifyProps> = {
    * Set this to the expected value of the `iss` claim in the JWT.
    */
   issuer: string;
-  /**
-   * The ARN of the Application Load Balancer (ALB) that signs the JWT.
-   * Set this to the expected value of the `signer` claim in the JWT (JWT header).
-   */
-  albArn: string;
 } & Partial<VerifyProps>;
 
 /**
@@ -80,8 +83,10 @@ export type JwtVerifierMultiProperties<T> = {
   /**
    * The ARN of the Application Load Balancer (ALB) that signs the JWT.
    * Set this to the expected value of the `signer` claim in the JWT (JWT header).
+   * If you provide a string array, that means at least one of those ALB ARNs
+   * must be present in the JWT's signer claim.
    */
-  albArn: string;
+  albArn: string | string[];
 } & T;
 
 /**
@@ -124,9 +129,7 @@ type AlbVerifyParameters<SpecificVerifyProperties> = {
  */
 export class AlbJwtVerifier<
   SpecificVerifyProperties extends Partial<VerifyProperties>,
-  IssuerConfig extends JwtVerifierProperties<SpecificVerifyProperties> & {
-    albArn: string;
-  },
+  IssuerConfig extends JwtVerifierProperties<SpecificVerifyProperties>,
   MultiIssuer extends boolean,
 > extends JwtVerifierBase<SpecificVerifyProperties, IssuerConfig, MultiIssuer> {
   /**
@@ -169,7 +172,7 @@ export class AlbJwtVerifier<
   }
 
   /**
-   * Verify (synchronously) a JWT that is signed by Amazon Application Load Balancer.
+   * Verify (synchronously) a JWT that is signed by AWS Application Load Balancer.
    *
    * @param jwt The JWT, as string
    * @param props Verification properties
@@ -196,7 +199,7 @@ export class AlbJwtVerifier<
   }
 
   /**
-   * Verify (asynchronously) a JWT that is signed by Amazon Cognito.
+   * Verify (asynchronously) a JWT that is signed by AWS Application Load Balancer.
    * This call is asynchronous, and the JWKS will be fetched from the JWKS uri,
    * in case it is not yet available in the cache.
    *
@@ -227,15 +230,25 @@ export class AlbJwtVerifier<
 
 export function validateAlbJwtFields(
   header: JwtHeader,
-  options: { clientId?: string | string[] | null; albArn: string }
+  options: {
+    clientId?: string | string[] | null;
+    albArn?: string | string[] | null;
+  }
 ): void {
   // Check ALB ARN (signer)
-  assertStringEquals(
-    "ALB ARN",
-    header.signer,
-    options.albArn
-    // todo create new error type
-  );
+  if (options.albArn !== null) {
+    if (options.albArn === undefined) {
+      throw new ParameterValidationError(
+        "albArn must be provided or set to null explicitly"
+      );
+    }
+    assertStringArrayContainsString(
+      "ALB ARN",
+      header.signer,
+      options.albArn
+      // todo create new error type
+    );
+  }
   // Check clientId
   if (options.clientId !== null) {
     if (options.clientId === undefined) {

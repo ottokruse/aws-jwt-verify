@@ -2,18 +2,10 @@ import { assertStringArrayContainsString } from "./assert";
 import { JwtInvalidClaimError, ParameterValidationError } from "error";
 import { Jwk, JwksCache } from "jwk";
 import { JwtHeader, JwtPayload } from "jwt-model"; // todo consider creating a specific type for AWS ALB JWT Payload
-import { JwtVerifierBase } from "jwt-verifier";
+import { JwtVerifierBase, JwtVerifierProperties } from "jwt-verifier";
 import { Properties } from "typing-util";
 
-export interface VerifyProperties {
-  /**
-   * The ARN of the Application Load Balancer (ALB) that signs the JWT.
-   * Set this to the expected value of the `signer` claim in the JWT (JWT header).
-   * If you provide a string array, that means at least one of those ALB ARNs
-   * must be present in the JWT's signer claim.
-   * Pass null explicitly to not check the JWT's signer--if you know what you're doing
-   */
-  albArn: string | string[] | null;
+export interface AlbVerifyProperties {
   /**
    * The client ID that you expect to be present in the JWT's client claim (in the JWT header).
    * If you provide a string array, that means at least one of those client IDs
@@ -50,25 +42,7 @@ export interface VerifyProperties {
 }
 
 /** Type for JWT verifier properties, for a single issuer */
-export type JwtVerifierProperties<VerifyProps> = {
-  /**
-   * URI where the JWKS (JSON Web Key Set) can be downloaded from.
-   * The JWKS contains one or more JWKs, which represent the public keys with which
-   * JWTs have been signed.
-   */
-  jwksUri?: string;
-  /**
-   * The issuer of the JWTs you want to verify.
-   * Set this to the expected value of the `iss` claim in the JWT.
-   */
-  issuer: string;
-} & Partial<VerifyProps>;
-
-/**
- * Type for JWT verifier properties, when multiple issuers are used in the verifier.
- * In this case, you should be explicit in mapping audience to issuer.
- */
-export type JwtVerifierMultiProperties<T> = {
+export type AlbJwtVerifierProperties = {
   /**
    * URI where the JWKS (JSON Web Key Set) can be downloaded from.
    * The JWKS contains one or more JWKs, which represent the public keys with which
@@ -85,29 +59,63 @@ export type JwtVerifierMultiProperties<T> = {
    * Set this to the expected value of the `signer` claim in the JWT (JWT header).
    * If you provide a string array, that means at least one of those ALB ARNs
    * must be present in the JWT's signer claim.
+   * Pass null explicitly to not check the JWT's signer--if you know what you're doing
    */
-  albArn: string | string[];
-} & T;
+  albArn: string | string[] | null;
+} & Partial<AlbVerifyProperties>;
 
 /**
- * JWT Verifier for a single issuer
+ * Type for JWT verifier properties, when multiple issuers are used in the verifier.
+ * In this case, you should be explicit in mapping audience to issuer.
  */
-export type JwtVerifierSingleIssuer<
-  T extends JwtVerifierProperties<VerifyProperties>,
-> = AlbJwtVerifier<
-  Properties<VerifyProperties, T>,
-  T & JwtVerifierProperties<VerifyProperties>,
-  false
->;
+export type AlbJwtVerifierMultiProperties = {
+  /**
+   * URI where the JWKS (JSON Web Key Set) can be downloaded from.
+   * The JWKS contains one or more JWKs, which represent the public keys with which
+   * JWTs have been signed.
+   */
+  jwksUri?: string;
+  /**
+   * The issuer of the JWTs you want to verify.
+   * Set this to the expected value of the `iss` claim in the JWT.
+   */
+  issuer: string;
+  /**
+   * The ARN of the Application Load Balancer (ALB) that signs the JWT.
+   * Set this to the expected value of the `signer` claim in the JWT (JWT header).
+   * If you provide a string array, that means at least one of those ALB ARNs
+   * must be present in the JWT's signer claim.
+   * Pass null explicitly to not check the JWT's signer--if you know what you're doing
+   */
+  albArn: string | string[] | null;
+} & AlbVerifyProperties;
 
 /**
- * JWT Verifier for multiple issuers
+ * ALB JWT Verifier for a single issuer
  */
-export type JwtVerifierMultiIssuer<
-  T extends JwtVerifierMultiProperties<VerifyProperties>,
+export type AlbJwtVerifierSingleUserPool<T extends AlbJwtVerifierProperties> =
+  AlbJwtVerifier<
+    Properties<AlbVerifyProperties, T>,
+    T &
+      JwtVerifierProperties<AlbVerifyProperties> & {
+        albArn: string | string[] | null;
+        audience: null;
+      },
+    false
+  >;
+
+/**
+ * ALB JWT Verifier for multiple issuer
+ */
+export type AlbJwtVerifierMultiUserPool<
+  T extends AlbJwtVerifierMultiProperties,
 > = AlbJwtVerifier<
-  Properties<VerifyProperties, T>,
-  T & JwtVerifierProperties<VerifyProperties>,
+  Properties<AlbVerifyProperties, T>,
+  T &
+    JwtVerifierProperties<AlbVerifyProperties> & {
+      albArn: string | string[] | null;
+      audience: null;
+    },
   true
 >;
 
@@ -128,10 +136,30 @@ type AlbVerifyParameters<SpecificVerifyProperties> = {
  * Class representing a verifier for JWTs signed by AWS ALB
  */
 export class AlbJwtVerifier<
-  SpecificVerifyProperties extends Partial<VerifyProperties>,
-  IssuerConfig extends JwtVerifierProperties<SpecificVerifyProperties>,
+  SpecificVerifyProperties extends Partial<AlbVerifyProperties>,
+  IssuerConfig extends JwtVerifierProperties<SpecificVerifyProperties> & {
+    audience: null;
+    albArn: string | string[] | null;
+  },
   MultiIssuer extends boolean,
 > extends JwtVerifierBase<SpecificVerifyProperties, IssuerConfig, MultiIssuer> {
+  private constructor(
+    props: AlbJwtVerifierProperties | AlbJwtVerifierMultiProperties[],
+    jwksCache?: JwksCache
+  ) {
+    const issuerConfig = Array.isArray(props)
+      ? (props.map((p) => ({
+          jwksUri: "", // todo implement logic
+          ...p,
+          audience: null, // checked instead by validateCognitoJwtFields
+        })) as IssuerConfig[])
+      : ({
+          jwksUri: "", // todo implement logic
+          ...props,
+          audience: null, // checked instead by validateCognitoJwtFields
+        } as IssuerConfig);
+    super(issuerConfig, jwksCache);
+  }
   /**
    * Create an JWT verifier for a single issuer
    *
@@ -140,10 +168,10 @@ export class AlbJwtVerifier<
    * @param additionalProperties.jwksCache Overriding JWKS cache that you want to use
    * @returns An JWT Verifier instance, that you can use to verify JWTs with
    */
-  static create<T extends JwtVerifierProperties<VerifyProperties>>(
-    verifyProperties: T & Partial<JwtVerifierProperties<VerifyProperties>>,
+  static create<T extends AlbJwtVerifierProperties>(
+    verifyProperties: T & Partial<AlbJwtVerifierProperties>,
     additionalProperties?: { jwksCache: JwksCache }
-  ): JwtVerifierSingleIssuer<T>;
+  ): AlbJwtVerifierSingleUserPool<T>;
 
   /**
    * Create a JWT verifier for multiple issuer
@@ -153,16 +181,16 @@ export class AlbJwtVerifier<
    * @param additionalProperties.jwksCache Overriding JWKS cache that you want to use
    * @returns A JWT Verifier instance, that you can use to verify JWTs with
    */
-  static create<T extends JwtVerifierMultiProperties<VerifyProperties>>(
-    verifyProperties: (T & Partial<JwtVerifierProperties<VerifyProperties>>)[],
+  static create<T extends AlbJwtVerifierMultiProperties>(
+    props: (T & Partial<AlbJwtVerifierMultiProperties>)[],
     additionalProperties?: { jwksCache: JwksCache }
-  ): JwtVerifierMultiIssuer<T>;
+  ): AlbJwtVerifierMultiUserPool<T>;
 
   // eslint-disable-next-line @typescript-eslint/explicit-module-boundary-types
   static create(
     verifyProperties:
-      | JwtVerifierProperties<VerifyProperties>
-      | JwtVerifierMultiProperties<VerifyProperties>[],
+      | AlbJwtVerifierProperties
+      | AlbJwtVerifierMultiProperties[],
     additionalProperties?: { jwksCache: JwksCache }
   ) {
     return new this(
@@ -278,6 +306,11 @@ if (process.env.JUST_TESTING_TYPES) {
     clientId: null,
   }).verify("");
   AlbJwtVerifier.create({
+    albArn: null,
+    issuer: "",
+    clientId: "",
+  }).verify("");
+  AlbJwtVerifier.create({
     albArn: "",
     issuer: "",
   }).verify("", {
@@ -288,13 +321,18 @@ if (process.env.JUST_TESTING_TYPES) {
   AlbJwtVerifier.create([
     {
       albArn: "",
-      issuer: "",
+      issuer: "1",
       clientId: "",
     },
     {
       albArn: "",
-      issuer: "",
+      issuer: "2",
       clientId: "",
     },
   ]).verify("");
+  AlbJwtVerifier.create({
+    albArn: ["", ""],
+    issuer: "",
+    clientId: "",
+  }).verify("");
 }

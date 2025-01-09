@@ -71,7 +71,7 @@ export interface VerifyProperties {
   graceSeconds?: number;
   /**
    * Your custom function with checks. It will be called, at the end of the verification,
-   * after standard verifcation checks have all passed.
+   * after standard verification checks have all passed.
    * Throw an error in this function if you want to reject the JWT for whatever reason you deem fit.
    * Your function will be called with a properties object that contains:
    * - the decoded JWT header
@@ -627,7 +627,7 @@ export abstract class JwtVerifierBase<
   ): {
     decomposedJwt: DecomposedJwt;
     jwksUri: string;
-    verifyProperties: SpecificVerifyProperties;
+    verifyProperties: SpecificVerifyProperties & IssuerConfig;
   } {
     const decomposedJwt = decomposeUnverifiedJwt(jwt);
     const issuerConfig = this.getIssuerConfig(decomposedJwt.payload.iss);
@@ -637,7 +637,7 @@ export abstract class JwtVerifierBase<
       verifyProperties: {
         ...issuerConfig,
         ...verifyProperties,
-      } as unknown as SpecificVerifyProperties,
+      } as SpecificVerifyProperties & IssuerConfig,
     };
   }
 
